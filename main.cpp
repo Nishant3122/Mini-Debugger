@@ -90,6 +90,42 @@ pid_t launch_target(const char* program_path, char* const argv[]) {
     // TODO: fork -> child does ptrace(PTRACE_TRACEME) -> execve(program_path, argv, environ)
     // parent returns child's pid
     // Return -1 on failure.
+    pid_t pid = fork();
+
+    if (child_pid == -1) {
+        cout<<"fork error";
+        return -1;
+    }
+    
+    if (child_pid == 0) {
+        // Child
+        if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1) {
+            cout<<"ptrace PTRACE_TRACEME error";
+            exit(1);
+        }
+        
+        // Execute the target program
+        execv(program_path, argv);
+        
+        cout<<"execv returned means it failed";
+        exit(1);
+    }
+    
+    // Parent process
+    int status;
+    if (waitpid(child_pid, &status, 0) == -1) {
+        cout<<"waitpid error";
+        return -1;
+    }
+    
+    if (WIFSTOPPED(status)) {
+        cout << "[Debugger] Target launched (PID: " << child_pid << ")\n";
+        cout << "[Debugger] Stopped with signal: " << WSTOPSIG(status) << "\n";
+        return child_pid;
+    }
+    
+    cout<< "[Error] Child did not stop as expected\n";
+    return -1;
     
 }
 
