@@ -138,11 +138,21 @@ int wait_for_child(pid_t child) {
 int continue_execution(pid_t child, int sig_to_deliver) {
     // TODO: call ptrace(PTRACE_CONT, child, 0, sig_to_deliver).
     // return 0 on success, -1 on failure
+    if (ptrace(PTRACE_CONT, child, nullptr, sig) == -1) {
+        cout<<"ptrace PTRACE_CONT error";
+        return -1;
+    }
+    return 0;
     
 }
 
 int single_step(pid_t child, int sig_to_deliver) {
     // TODO: ptrace(PTRACE_SINGLESTEP, child, 0, sig_to_deliver)
+    if (ptrace(PTRACE_SINGLESTEP, child, nullptr, sig) == -1) {
+        cout<<"ptrace PTRACE_SINGLESTEP error";
+        return -1;
+    }
+    return 0;
     
 }
 
@@ -223,5 +233,104 @@ void remove_bp_from_list(Breakpoint* bp) {
 /* ========== Simple REPL ========== */
 
 void repl(pid_t child) {
+    string line;
+    bool flag = true;
+    
+    cout << "\n[Debugger] Entering interactive mode. Type 'h' for help.\n";
+    
+    while (flag) {
+        cout << "mini-dbg ";
+        
+        if (!getline(cin, line)) {
+            break;
+        }
+        
+        istringstream iss(line);
+        string command;
+        iss >> command;
+        
+        if (command.empty()) {
+            continue;
+        }
+        
+        if (command == "h" || command == "help") {
+            print_help();
+        }
+        else if (command == "b") {
+            // Set breakpoint
+            string addr_str;
+            if (!(iss >> addr_str)) {
+                cout << "Enter input correctly: b <address>\n";
+                continue;
+            }
+            
+            void* addr = (void*)stoull(addr_str, nullptr, 16);//converting string into address
+            insert_breakpoint(child, addr);
+        }
+        else if (command == "rb") {
+            // Remove breakpoint
+            string addr_str;
+            if (!(iss >> addr_str)) {
+                cout << "Enter input correctly: rb <address>\n";
+                continue;
+            }
+            
+            void* addr = (void*)stoull(addr_str, nullptr, 16);
+            remove_breakpoint(child, addr);
+        }
+        else if (command == "c") {
+            // Continue execution
+            cout << "[Debugger] Continuing\n";
+            if (continue_execution(child, 0) == -1) {
+                continue;
+            }
+            
+            int sig = wait_for_child(child);
+            if (sig == 0) {
+                // Process exited
+                flag = false;
+            } else if (sig == SIGTRAP) {
+                handle_breakpoint(child);
+            }
+        }
+        else if (command == "s") {
+            // Single step
+            cout << "[Debugger] Single stepping\n";
+            if (single_step(child, 0) == -1) {
+                continue;
+            }
+            
+            int sig = wait_for_child(child);
+            if (sig == 0) {
+                flag = false;
+            }
+            
+            // Show current RIP after 1 step
+            struct user_regs_struct regs;
+            if (get_regs(child, &regs) == 0) {
+                cout << "Current RIP is at: 0x" <<hex<< regs.rip <<dec<< "\n";
+            }
+        }
+        else if (command == "regs") {
+            // Display registers
+            struct user_regs_struct regs;
+            if (get_regs(child, &regs) == 0) {
+                print_regs(&regs);
+            }
+        }
+        else if (command == "l") {
+            // List breakpoints
+            list_breakpoints();
+        }
+        else if (command == "q" || command == "quit") {
+            cout << "[Debugger] Detaching and quitting...\n";
+            ptrace(PTRACE_DETACH, child, nullptr, nullptr);
+            flag = false;
+        }
+        else {
+            cout << "Unknown command: " << command << "\n";
+            cout << "Type 'h' for help.\n";
+        }
+    }
     
 }
