@@ -93,28 +93,28 @@ pid_t launch_target(const char* program_path, char* const argv[]) {
     pid_t pid = fork();
 
     if (child_pid == -1) {
-        cout<<"fork error";
+        perror("fork");
         return -1;
     }
     
     if (child_pid == 0) {
         // Child
         if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1) {
-            cout<<"ptrace PTRACE_TRACEME error";
+            perror("ptrace PTRACE_TRACEME");
             exit(1);
         }
         
         // Execute the target program
         execv(program_path, argv);
         
-        cout<<"execv returned means it failed";
+        perror("execv returned means it failed");
         exit(1);
     }
     
     // Parent process
     int status;
     if (waitpid(child_pid, &status, 0) == -1) {
-        cout<<"waitpid error";
+        perror("waitpid");
         return -1;
     }
     
@@ -139,7 +139,7 @@ int continue_execution(pid_t child, int sig_to_deliver) {
     // TODO: call ptrace(PTRACE_CONT, child, 0, sig_to_deliver).
     // return 0 on success, -1 on failure
     if (ptrace(PTRACE_CONT, child, nullptr, sig) == -1) {
-        cout<<"ptrace PTRACE_CONT error";
+        perror("ptrace PTRACE_CONT");
         return -1;
     }
     return 0;
@@ -149,7 +149,7 @@ int continue_execution(pid_t child, int sig_to_deliver) {
 int single_step(pid_t child, int sig_to_deliver) {
     // TODO: ptrace(PTRACE_SINGLESTEP, child, 0, sig_to_deliver)
     if (ptrace(PTRACE_SINGLESTEP, child, nullptr, sig) == -1) {
-        cout<<"ptrace PTRACE_SINGLESTEP error";
+        perror("ptrace PTRACE_SINGLESTEP");
         return -1;
     }
     return 0;
