@@ -1,0 +1,23 @@
+
+test:     file format elf64-x86-64
+
+Contents of the .debug_line section:
+
+test.cpp:
+File name                        Line number    Starting address    View    Stmt
+test.cpp                                   3            0x401176               x
+test.cpp                                   4            0x401182               x
+test.cpp                                   5            0x401189               x
+test.cpp                                   5            0x401190               x
+test.cpp                                   6            0x401192               x
+test.cpp                                   7            0x40119b               x
+test.cpp                                   7            0x4011b2        
+test.cpp                                   7            0x4011c7               x
+test.cpp                                   7            0x4011d4               x
+test.cpp                                   5            0x4011e6               x
+test.cpp                                   5            0x4011ea               x
+test.cpp                                   9            0x4011f0               x
+test.cpp                                  10            0x4011f5               x
+test.cpp                                   -            0x4011f7
+
+

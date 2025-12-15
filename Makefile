@@ -1,13 +1,21 @@
+# Compiler
 CXX = g++
+
+# Compiler flags
 CXXFLAGS = -Wall -g
 
-all: main testprog
+# Default target
+all: New_file test
 
-main: main.cpp
-	$(CXX) $(CXXFLAGS) main.cpp -o main
+# Debugger program
+New_file: New_file.cpp
+	$(CXX) $(CXXFLAGS) New_file.cpp -o New_file
 
-testprog: testprog.cpp
-	$(CXX) $(CXXFLAGS) testprog.cpp -o testprog
+# Test program (NON-PIE is IMPORTANT)
+test: test.cpp
+	$(CXX) $(CXXFLAGS) -no-pie test.cpp -o test
 
+# Clean
+.PHONY: clean
 clean:
-	rm -f main testprog
+	rm -f New_file test *.o
