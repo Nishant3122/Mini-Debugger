@@ -25,8 +25,8 @@
 #include <iomanip>
 #include<unordered_map>
 #include<fstream>
-
-
+#include <limits>
+#include<string>
 
 
 
@@ -47,6 +47,7 @@ struct Breakpoint{
     long addr;
     long original_byte;
     bool enabled;
+    int line_number;
 };
 unordered_map<long,Breakpoint> breakpoints;
 // ---- Global head of breakpoint list ----
@@ -57,8 +58,8 @@ pid_t launch_target(const char* program_path, char* const argv[]);
 int wait_for_child(pid_t child);
 int continue_execution(pid_t child, int sig_to_deliver);
 int single_step(pid_t child, int sig_to_deliver);
-bool insert_breakpoint(pid_t pid, long addr);
-bool remove_breakpoint(pid_t pid, long addr);
+bool insert_breakpoint(pid_t pid, long addr,int line);
+bool remove_breakpoint(pid_t pid, long addr,int line);
 void handle_breakpoint(pid_t pid,long addr);
 int read_mem(pid_t child, void* addr, long* out_word);
 int write_mem(pid_t child, void* addr, long word);
@@ -66,6 +67,19 @@ int get_regs(pid_t child, struct user_regs_struct* regs);
 int set_regs(pid_t child, const struct user_regs_struct* regs);
 void print_regs(struct user_regs_struct* reg1);
 void list_breakpoints(void);
+void print_help()
+{
+    cout << "\nAvailable commands:\n";
+    cout << "  b_addr <addr>   - Set breakpoint at address (hex)\n";
+    cout << "  b_line <Line>   - Set breakpoint at Line of code\n";
+    cout << "  rb <addr>  - Remove breakpoint at address (hex)\n";
+    cout << "  c          - Continue execution\n";
+    cout << "  s          - Single step\n";
+    cout << "  regs       - Display registers\n";
+    cout << "  l          - List all breakpoints\n";
+    cout << "  h          - Show this help\n";
+    cout << "  q          - Quit debugger\n\n";
+}
 /*Breakpoint* find_breakpoint(void* addr);
 void add_bp_to_list(Breakpoint* bp);
 void remove_bp_from_list(Breakpoint* bp);*/
@@ -80,7 +94,11 @@ int main(int argc, char* argv[]) {
         cerr << "Example: " << argv[0] << " ./test_program arg1 arg2\n";
         return 1;
     }
-    
+    int r=system(("objdump --dwarf=decodedline "+string(argv[1])+" > addr.txt").c_str());
+    if(r!=0){
+        cout<<"failed dump\n";
+        return 1;
+    }
     cout << "=== Mini Debugger ===\n";
     cout << "Target: " << argv[1] << "\n\n";
     
@@ -92,7 +110,7 @@ int main(int argc, char* argv[]) {
     
     // Enter the debugger REPL
     repl(child);
-    
+   
     cout << "\n[Debugger] Session ended.\n";
     return 0;
 }
@@ -196,7 +214,7 @@ int single_step(pid_t child, int sig_to_deliver) {
     
 }
 
-bool insert_breakpoint(pid_t pid, long addr) {
+bool insert_breakpoint(pid_t pid, long addr,int line) {
     // TODO:
     // - read machine long at addr using read_mem
     // - save original word
@@ -221,13 +239,14 @@ bool insert_breakpoint(pid_t pid, long addr) {
        bp.addr=addr;
        bp.original_byte=original;
        bp.enabled=true;
+       bp.line_number=line;
        breakpoints[addr]=bp;
 
    return true;
     
 }
 
-bool remove_breakpoint(pid_t pid, long addr) {
+bool remove_breakpoint(pid_t pid, long addr,int line) {
     // TODO:
     // - find breakpoint in list
     // - restore original word at addr
@@ -269,7 +288,7 @@ void handle_breakpoint(pid_t pid,long address) {
     ptrace(PTRACE_GETREGS,pid,0,&reg);
     
     long hit_address=reg.rip-1;
-    cout<<"BreakPoint Hit 0x"<<hit_address;
+    cout<<"BreakPoint Hit 0x"<<hit_address<<endl;
      if(bp.enabled){
         long data_get=ptrace(PTRACE_PEEKDATA,pid,hit_address,0);
         long original_data=data_get&~0xFF|bp.original_byte;
@@ -347,8 +366,84 @@ void print_regs( struct user_regs_struct* reg1) {
     
 }
 void print_reg(struct user_regs_struct* reg1,string ans){
-        if(ans=="rip"){
-            cout<<reg1->rip;
+        
+        if(ans=="all"){
+            print_regs(reg1);
+        }
+        else if(ans=="rip"){
+         cout<< "RIP : 0x" << hex << reg1->rip << endl;
+        }
+        else if(ans=="rsp"){
+         cout<< "RSP : 0x" << hex << reg1->rsp << endl;
+        }
+        else if(ans=="rbp"){
+        cout<< "RBP : 0x" << hex << reg1->rbp << endl;
+        }
+        else if(ans=="eflags"){
+         cout<< "EFLAGS : 0x" << hex << reg1->eflags << endl;
+        }
+        else if(ans=="rax"){
+ cout<< "RAX : 0x" << hex << reg1->rax << endl;
+        }
+        else if(ans=="rbx"){
+ cout<< "RBX : 0x" << hex << reg1->rbx << endl;
+        }
+        else if(ans=="rcx"){
+ cout<< "RcX : 0x" << hex << reg1->rcx << endl;
+        }
+        else if(ans=="rdx"){
+ cout<< "RDX : 0x" << hex << reg1->rdx << endl;
+        }
+        else if(ans=="rsi"){
+ cout<< "RSI : 0x" << hex << reg1->rsi << endl;
+        }
+        else if(ans=="rdi"){
+ cout<< "RDI : 0x" << hex << reg1->rdi << endl;
+        }
+        else if(ans=="r8"){
+cout<< "R8 : 0x" << hex << reg1->r8 << endl;
+        }
+        else if(ans=="r9"){
+ cout<< "R9 : 0x" << hex << reg1->r9 << endl;
+        }
+        else if(ans=="r10"){
+cout<< "R10 : 0x" << hex << reg1->r10 << endl;
+        }
+        else if(ans=="r11"){
+cout<< "R11 : 0x" << hex << reg1->r11 << endl;
+        }
+        else if(ans=="r12"){
+cout<< "R12 : 0x" << hex << reg1->r12 << endl;
+        }
+        else if(ans=="r13"){
+cout<< "R13 : 0x" << hex << reg1->r13 << endl;
+        }
+        else if(ans=="r14"){
+cout<< "R14 : 0x" << hex << reg1->r14 << endl;
+        }
+        else if(ans=="r15"){
+cout<< "R15 : 0x" << hex << reg1->r15 << endl;
+        }
+        else if(ans=="cs"){
+cout<< "CS : 0x" << hex << reg1->cs << endl;
+        }
+        else if(ans=="ss"){
+cout<< "SS : 0x" << hex << reg1->ss << endl;
+        }
+        else if(ans=="ds"){
+cout<< "DS : 0x" << hex << reg1->ds << endl;
+        }
+        else if(ans=="es"){
+cout<< "ES : 0x" << hex << reg1->es << endl;
+        }
+        else if(ans=="fs"){
+cout<< "FS : 0x" << hex << reg1->fs << endl;
+        }
+        else if(ans=="gs"){
+cout<< "GS : 0x" << hex << reg1->gs << endl;
+        }
+        else{
+            cout<<"I have no information about this register"<<endl;
         }
 }
 uint64_t get_address_from_line(
@@ -380,12 +475,15 @@ uint64_t get_address_from_line(
 }
 
 
-/*void list_breakpoints() {
+void list_breakpoints() {
     // TODO: iterate bp_list_head and print addresses + enabled flag
+    for(auto &it:breakpoints){
+       cout<<"Break Point Line Number "<<it.second.line_number <<" "<<"Address "<<it.first<<endl;
+    }
     
 }
 
-Breakpoint* find_breakpoint(void* addr) {
+/*Breakpoint* find_breakpoint(void* addr) {
     // TODO: linear search in bp_list_head
     
 }
@@ -424,21 +522,37 @@ void repl(pid_t child) {
         }
         
         if (command == "h" || command == "help") {
-           // print_help();
+           print_help();
         }
-        else if (command == "b") {
+        else if (command == "b_line") {
             // Set breakpoint
             string addr_str;
-           if (!(iss >> addr_str)) {
+          if (!(iss >> addr_str)) {
                 cout << "Enter input correctly: b <address>\n";
                 continue;
             }
             
             //void* addr = (void*)stoull(addr_str, nullptr, 16);//converting string into address
-            long addr = stoull(addr_str, nullptr, 16);
-           // long addr=get_address_from_line("addr.txt",5);
+           // long addr = stoull(addr_str, nullptr, 16);
+           long addr=get_address_from_line("addr.txt",stoi(addr_str));
              //cout<<"Address"<<" "<<addr<<endl;
-              if(insert_breakpoint(child, addr)){
+              if(insert_breakpoint(child, addr,stoi(addr_str))){
+                cout<<"Breakpoint inserted at 0x"<<addr<<endl;
+              }
+              else{
+                cout<<"Breakpoint not able to insert at 0x"<<addr<<endl;
+              }
+        }
+        else if(command=="b_addr"){
+              string addr_str;
+          if (!(iss >> addr_str)) {
+                cout << "Enter input correctly: b <address>\n";
+                continue;
+            }
+            long addr = stoull(addr_str, nullptr, 16);
+            
+             //cout<<"Address"<<" "<<addr<<endl;
+              if(insert_breakpoint(child, addr,addr)){
                 cout<<"Breakpoint inserted at 0x"<<addr<<endl;
               }
               else{
@@ -454,8 +568,10 @@ void repl(pid_t child) {
             }
             
             //void* addr = (void*)stoull(addr_str, nullptr, 16);
-            long addr = stoull(addr_str, nullptr, 16);
-            if(remove_breakpoint(child, addr))
+            //long addr = stoull(addr_str, nullptr, 16);
+             long addr=get_address_from_line("addr.txt",stoi(addr_str));
+           
+            if(remove_breakpoint(child, addr,stoi(addr_str)))
             {
                 cout<<"Breakpoint removed at 0x:"<<addr<<endl;
             }
@@ -481,14 +597,33 @@ void repl(pid_t child) {
                 long hit_addr = regs.rip - 1;
 
                 if (breakpoints.count(hit_addr)) {
-                    cout << "BREAKPOINT HIT";
+                    cout << "BREAKPOINT HIT"<<endl;
                     user_regs_struct reg1;
                     if(ptrace(PTRACE_GETREGS,child,0,&reg1)==0){
-                        cout<<"Pint";
+                       /* cout<<"Pint";
                          string line;
-                        getline(cin,line);
-                        print_reg(&reg1,line);
-                        handle_breakpoint(child,hit_addr);
+                        getline(cin,line);*/
+                        cout<<endl;
+                        char y;
+                        string ans;
+                        cout<<"Do you want print register?(y/n)"<<endl;
+                        cin>>y;
+                         
+                        if(y=='y')
+                        {
+                             cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                            cout<<"Print all regs or specific?"<<endl;
+                            cin>>ans;
+                            print_reg(&reg1,ans);
+                            
+                              
+                        }
+                        else{
+                            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                        }
+                    
+                         handle_breakpoint(child,hit_addr);
+                     
                     }
                  }
             }
@@ -515,12 +650,15 @@ void repl(pid_t child) {
             // Display registers
             struct user_regs_struct reg1;
             if (get_regs(child, &reg1) == 0) {
+
                 print_regs(&reg1);
             }
         }
         else if (command == "l") {
             // List breakpoints
             //list_breakpoints();
+            cout<<"Breakpoint List"<<endl;
+            list_breakpoints();
         }
         else if (command == "q" || command == "quit") {
             cout << "[Debugger] Detaching and quitting...\n";

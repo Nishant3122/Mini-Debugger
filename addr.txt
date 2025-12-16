@@ -1,5 +1,5 @@
 
-test:     file format elf64-x86-64
+./test:     file format elf64-x86-64
 
 Contents of the .debug_line section:
 
