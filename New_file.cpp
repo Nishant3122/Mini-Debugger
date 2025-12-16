@@ -60,6 +60,19 @@ int get_regs(pid_t child, struct user_regs_struct* regs);
 int set_regs(pid_t child, const struct user_regs_struct* regs);
 void print_regs(struct user_regs_struct* reg1);
 void list_breakpoints(void);
+void print_help()
+{
+    cout << "\nAvailable commands:\n";
+    cout << "  b_addr <addr>   - Set breakpoint at address (hex)\n";
+    cout << "  b_line <Line>   - Set breakpoint at Line of code\n";
+    cout << "  rb <addr>  - Remove breakpoint at address (hex)\n";
+    cout << "  c          - Continue execution\n";
+    cout << "  s          - Single step\n";
+    cout << "  regs       - Display registers\n";
+    cout << "  l          - List all breakpoints\n";
+    cout << "  h          - Show this help\n";
+    cout << "  q          - Quit debugger\n\n";
+}
 /*Breakpoint* find_breakpoint(void* addr);
 void add_bp_to_list(Breakpoint* bp);
 void remove_bp_from_list(Breakpoint* bp);*/
