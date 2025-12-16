@@ -23,7 +23,7 @@
 #include <memory>
 #include <sstream>
 #include <iomanip>
-
+#include<unordered_map>
 using namespace std;
 
 // ---- Simple breakpoint structure ----
@@ -41,7 +41,7 @@ struct Breakpoint{
     long addr;
     long original_byte;
     bool enabled;
-}
+};
 unordered_map<long,Breakpoint> breakpoints;
 // ---- Global head of breakpoint list ----
 
@@ -51,16 +51,18 @@ pid_t launch_target(const char* program_path, char* const argv[]);
 int wait_for_child(pid_t child);
 int continue_execution(pid_t child, int sig_to_deliver);
 int single_step(pid_t child, int sig_to_deliver);
-int insert_breakpoint(pid_t child, long addr);
-int remove_breakpoint(pid_t child, long addr);
-int handle_breakpoint(pid_t child, long addr);
+bool insert_breakpoint(pid_t pid, long addr);
+bool remove_breakpoint(pid_t pid, long addr);
+void handle_breakpoint(pid_t pid,long addr);
+int read_mem(pid_t child, void* addr, long* out_word);
+int write_mem(pid_t child, void* addr, long word);
 int get_regs(pid_t child, struct user_regs_struct* regs);
 int set_regs(pid_t child, const struct user_regs_struct* regs);
-void print_regs(const struct user_regs_struct* regs);
+void print_regs(struct user_regs_struct* reg1);
 void list_breakpoints(void);
-Breakpoint* find_breakpoint(void* addr);
+/*Breakpoint* find_breakpoint(void* addr);
 void add_bp_to_list(Breakpoint* bp);
-void remove_bp_from_list(Breakpoint* bp);
+void remove_bp_from_list(Breakpoint* bp);*/
 
 // ---- Helper / minimal CLI to demo usage ----
 void repl(pid_t child);
@@ -97,12 +99,12 @@ pid_t launch_target(const char* program_path, char* const argv[]) {
     // Return -1 on failure.
     pid_t pid = fork();
 
-    if (child_pid == -1) {
+    if (pid == -1) {
         perror("fork");
         return -1;
     }
     
-    if (child_pid == 0) {
+    if (pid == 0) {
         // Child
         if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1) {
             perror("ptrace PTRACE_TRACEME");
@@ -118,15 +120,15 @@ pid_t launch_target(const char* program_path, char* const argv[]) {
     
     // Parent process
     int status;
-    if (waitpid(child_pid, &status, 0) == -1) {
+    if (waitpid(pid, &status, 0) == -1) {
         perror("waitpid");
         return -1;
     }
     
     if (WIFSTOPPED(status)) {
-        cout << "[Debugger] Target launched (PID: " << child_pid << ")\n";
+        cout << "[Debugger] Target launched (PID: " << pid << ")\n";
         cout << "[Debugger] Stopped with signal: " << WSTOPSIG(status) << "\n";
-        return child_pid;
+        return pid;
     }
     
     cout<< "[Error] Child did not stop as expected\n";
@@ -155,7 +157,7 @@ int wait_for_child(pid_t child) {
     
     if (WIFSTOPPED(status)) {
         int sig = WSTOPSIG(status);
-        cout << "[Debugger] Target stopped by signal " << sig;
+        //cout << "[Debugger] Target stopped by signal " << sig;
         if (sig == SIGTRAP) {
             cout << " (SIGTRAP - breakpoint or single-step)";
         }
@@ -170,7 +172,7 @@ int wait_for_child(pid_t child) {
 int continue_execution(pid_t child, int sig_to_deliver) {
     // TODO: call ptrace(PTRACE_CONT, child, 0, sig_to_deliver).
     // return 0 on success, -1 on failure
-    if (ptrace(PTRACE_CONT, child, nullptr, sig) == -1) {
+    if (ptrace(PTRACE_CONT, child, nullptr, sig_to_deliver) == -1) {
         perror("ptrace PTRACE_CONT");
         return -1;
     }
@@ -180,7 +182,7 @@ int continue_execution(pid_t child, int sig_to_deliver) {
 
 int single_step(pid_t child, int sig_to_deliver) {
     // TODO: ptrace(PTRACE_SINGLESTEP, child, 0, sig_to_deliver)
-    if (ptrace(PTRACE_SINGLESTEP, child, nullptr, sig) == -1) {
+    if (ptrace(PTRACE_SINGLESTEP, child, nullptr, sig_to_deliver) == -1) {
         perror("ptrace PTRACE_SINGLESTEP");
         return -1;
     }
@@ -188,7 +190,7 @@ int single_step(pid_t child, int sig_to_deliver) {
     
 }
 
-bool insert_breakpoint(pid_t child, long addr) {
+bool insert_breakpoint(pid_t pid, long addr) {
     // TODO:
     // - read machine long at addr using read_mem
     // - save original word
@@ -210,16 +212,21 @@ bool insert_breakpoint(pid_t child, long addr) {
         return false;
     }
      Breakpoint bp;
-       bp.addr=addr;
-       bp.original_byte=original;
-       bp.enabled=true;
-       breakpoints[addr]=bp;
+    bp.addr=addr;
+    bp.original_byte=original;
+    bp.enabled=true;
+    if (breakpoints.count(addr)) {
+        cout << "Breakpoint already exists\n";
+        return false;
+    }
+
+    breakpoints[addr]=bp;
 
    return true;
     
 }
 
-bool remove_breakpoint(pid_t child, long addr) {
+bool remove_breakpoint(pid_t pid, long addr) {
     // TODO:
     // - find breakpoint in list
     // - restore original word at addr
@@ -248,7 +255,7 @@ bool remove_breakpoint(pid_t child, long addr) {
     
 }
 
-void handle_breakpoint(pid_t child,long address) {
+void handle_breakpoint(pid_t pid,long address) {
     // TODO:
     // - get regs
     // - adjust RIP (instruction pointer) to point back at original instruction
@@ -271,7 +278,7 @@ void handle_breakpoint(pid_t child,long address) {
         reg.rip=hit_address;
         ptrace(PTRACE_SETREGS,pid,0,&reg);
         ptrace(PTRACE_SINGLESTEP,pid,0,0);
-      //  waitpid(pid,NULL,0);
+        waitpid(pid,NULL,0);
          
             // reinsert(pid, hit_addr);
             if(!bp.enabled){
@@ -307,36 +314,36 @@ int set_regs(pid_t child, const struct user_regs_struct* regs) {
     
 }
 
-void print_regs(const struct user_regs_struct* reg1) {
+void print_regs( struct user_regs_struct* reg1) {
     // TODO: print RIP, RSP, RBP, RAX, RBX, RCX, RDX, RSI, RDI, EFLAGS
-    cout<< "RIP : 0x" << hex << reg1.rip << endl;
-    cout<< "RSP : 0x" << hex << reg1.rsp << endl;
-    cout<< "RBP : 0x" << hex << reg1.rbp << endl;
-    cout<< "EFLAGS : 0x" << hex << reg1.eflags << endl;
-    cout<< "RAX : 0x" << hex << reg1.rax << endl;
-    cout<< "RBX : 0x" << hex << reg1.rbx << endl;
-    cout<< "RCX : 0x" << hex << reg1.rcx << endl;
-    cout<< "RDX : 0x" << hex << reg1.rdx << endl;
-    cout<< "RSI : 0x" << hex << reg1.rsi << endl;
-    cout<< "RDI : 0x" << hex << reg1.rdi << endl;
-    cout<< "R8 : 0x" << hex << reg1.r8 << endl;
-    cout<< "R9 : 0x" << hex << reg1.r9 << endl;
-    cout<< "R10 : 0x" << hex << reg1.r10 << endl;
-    cout<< "R11 : 0x" << hex << reg1.r11 << endl;
-    cout<< "R12 : 0x" << hex << reg1.r12 << endl;
-    cout<< "R13 : 0x" << hex << reg1.r13 << endl;
-    cout<< "R14 : 0x" << hex << reg1.r14 << endl;
-    cout<< "R15 : 0x" << hex << reg1.r15 << endl;
-    cout<< "CS : 0x" << hex << reg1.cs << endl;
-    cout<< "SS : 0x" << hex << reg1.ss << endl;
-    cout<< "DS : 0x" << hex << reg1.ds << endl;
-    cout<< "ES : 0x" << hex << reg1.es << endl;
-    cout<< "FS : 0x" << hex << reg1.fs << endl;
-    cout<< "GS : 0x" << hex << reg1.gs << endl;
+    cout<< "RIP : 0x" << hex << reg1->rip << endl;
+    cout<< "RSP : 0x" << hex << reg1->rsp << endl;
+    cout<< "RBP : 0x" << hex << reg1->rbp << endl;
+    cout<< "EFLAGS : 0x" << hex << reg1->eflags << endl;
+    cout<< "RAX : 0x" << hex << reg1->rax << endl;
+    cout<< "RBX : 0x" << hex << reg1->rbx << endl;
+    cout<< "RCX : 0x" << hex << reg1->rcx << endl;
+    cout<< "RDX : 0x" << hex << reg1->rdx << endl;
+    cout<< "RSI : 0x" << hex << reg1->rsi << endl;
+    cout<< "RDI : 0x" << hex << reg1->rdi << endl;
+    cout<< "R8 : 0x" << hex << reg1->r8 << endl;
+    cout<< "R9 : 0x" << hex << reg1->r9 << endl;
+    cout<< "R10 : 0x" << hex << reg1->r10 << endl;
+    cout<< "R11 : 0x" << hex << reg1->r11 << endl;
+    cout<< "R12 : 0x" << hex << reg1->r12 << endl;
+    cout<< "R13 : 0x" << hex << reg1->r13 << endl;
+    cout<< "R14 : 0x" << hex << reg1->r14 << endl;
+    cout<< "R15 : 0x" << hex << reg1->r15 << endl;
+    cout<< "CS : 0x" << hex << reg1->cs << endl;
+    cout<< "SS : 0x" << hex << reg1->ss << endl;
+    cout<< "DS : 0x" << hex << reg1->ds << endl;
+    cout<< "ES : 0x" << hex << reg1->es << endl;
+    cout<< "FS : 0x" << hex << reg1->fs << endl;
+    cout<< "GS : 0x" << hex << reg1->gs << endl;
     
 }
 
-void list_breakpoints() {
+/*void list_breakpoints() {
     // TODO: iterate bp_list_head and print addresses + enabled flag
     
 }
@@ -354,7 +361,7 @@ void add_bp_to_list(Breakpoint* bp) {
 void remove_bp_from_list(Breakpoint* bp) {
     // TODO: remove node from linked list and free it
     
-}
+}*/
 
 /* ========== Simple REPL ========== */
 
@@ -380,7 +387,7 @@ void repl(pid_t child) {
         }
         
         if (command == "h" || command == "help") {
-            print_help();
+           // print_help();
         }
         else if (command == "b") {
             // Set breakpoint
@@ -390,7 +397,8 @@ void repl(pid_t child) {
                 continue;
             }
             
-            void* addr = (void*)stoull(addr_str, nullptr, 16);//converting string into address
+            //void* addr = (void*)stoull(addr_str, nullptr, 16);//converting string into address
+            long addr = stoull(addr_str, nullptr, 16);
               if(insert_breakpoint(child, addr)){
                 cout<<"Breat point inserted at 0x"<<addr<<endl;
               }
@@ -406,7 +414,8 @@ void repl(pid_t child) {
                 continue;
             }
             
-            void* addr = (void*)stoull(addr_str, nullptr, 16);
+            //void* addr = (void*)stoull(addr_str, nullptr, 16);
+            long addr = stoull(addr_str, nullptr, 16);
             if(remove_breakpoint(child, addr))
             {
                 cout<<"Breakpoint removed at 0x:"<<addr<<endl;
@@ -428,16 +437,17 @@ void repl(pid_t child) {
                 flag = false;
             } else if (sig == SIGTRAP) {
                 user_regs_struct regs;
-                ptrace(PTRACE_GETREGS, pid, 0, &regs);
+                ptrace(PTRACE_GETREGS, child, 0, &regs);
 
                 long hit_addr = regs.rip - 1;
 
                 if (breakpoints.count(hit_addr)) {
                     cout << "BREAKPOINT HIT";
                     user_regs_struct reg1;
-                    if(ptrace(PTRACE_GETREGS,pid,0,&reg1)==0)
-                        print_reg(reg1);
-                        handle_breakpoint(pid,hit_addr);
+                    if(ptrace(PTRACE_GETREGS,child,0,&reg1)==0){
+                        print_regs(&reg1);
+                        handle_breakpoint(child,hit_addr);
+                    }
                  }
             }
         }
@@ -468,7 +478,7 @@ void repl(pid_t child) {
         }
         else if (command == "l") {
             // List breakpoints
-            list_breakpoints();
+            //list_breakpoints();
         }
         else if (command == "q" || command == "quit") {
             cout << "[Debugger] Detaching and quitting...\n";
